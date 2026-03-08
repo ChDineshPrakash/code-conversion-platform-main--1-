@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Copy, Check, Trash2, ArrowRightLeft, Info, GitBranch, Code2, Network, Play, TerminalSquare } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Copy, Check, Trash2, ArrowRightLeft, Info, GitBranch, Code2, Network, Play, TerminalSquare, Sparkles } from "lucide-react";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { ConversionModeSelector } from "@/components/ConversionModeSelector";
 import { CodeEditor } from "@/components/CodeEditor";
@@ -7,7 +7,7 @@ import { ConvertButton } from "@/components/ConvertButton";
 import { FlowchartPanel } from "@/components/FlowchartPanel";
 import { DataStructurePanel } from "@/components/DataStructurePanel";
 
-import { convertCode } from "@/lib/codeConverter";
+import { convertCode, generateCode } from "@/lib/codeConverter";
 import { toast } from "sonner";
 
 const sampleCode = `def greet(name):
@@ -35,6 +35,10 @@ export default function Index() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isConverting, setIsConverting] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Generator state
+  const [promptText, setPromptText] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Flowchart state
   const [flowchartCode, setFlowchartCode] = useState(sampleCode);
@@ -139,19 +143,53 @@ export default function Index() {
     setConvertedRunStatus(status);
   };
 
+  const handleGenerate = async () => {
+    if (!promptText.trim()) {
+      toast.error("Please enter a prompt to generate code");
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      const code = await generateCode(promptText, sourceLanguage);
+      setSourceCode(code);
+      toast.success("Code generated! Now you can run or convert it.");
+
+      // Clear run outputs since code changed
+      setSourceRunOutput(null);
+      setSourceRunStatus(null);
+      setConvertedRunOutput(null);
+      setConvertedRunStatus(null);
+    } catch (err) {
+      toast.error("Failed to generate code");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleConvert = async () => {
     if (!sourceCode.trim()) {
       toast.error("Please enter some code to convert");
       return;
     }
     setIsConverting(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const result = convertCode(sourceCode, sourceLanguage, targetLanguage, conversionMode);
-    setConvertedCode(result.code);
-    setExplanation(result.explanation);
-    setWarnings(result.warnings);
-    setIsConverting(false);
-    toast.success("Code converted successfully!");
+    try {
+      const result = await convertCode(sourceCode, sourceLanguage, targetLanguage, conversionMode);
+      setConvertedCode(result.code);
+      setExplanation(result.explanation);
+      setWarnings(result.warnings);
+
+      // Clear run outputs since code changed
+      setSourceRunOutput(null);
+      setSourceRunStatus(null);
+      setConvertedRunOutput(null);
+      setConvertedRunStatus(null);
+
+      toast.success("Code converted successfully!");
+    } catch (err) {
+      toast.error("Failed to convert code");
+    } finally {
+      setIsConverting(false);
+    }
   };
 
   const handleSwapLanguages = () => {
@@ -178,6 +216,10 @@ export default function Index() {
     setConvertedCode("");
     setExplanation("");
     setWarnings([]);
+    setSourceRunOutput(null);
+    setSourceRunStatus(null);
+    setConvertedRunOutput(null);
+    setConvertedRunStatus(null);
   };
 
   const handleGenerateFlowchart = () => {
@@ -216,13 +258,13 @@ export default function Index() {
                   Code<span className="text-primary">Polyglot</span>
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  Offline Code Translation Engine
+                  AI-Powered Code Translation
                 </p>
               </div>
             </div>
             <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-secondary/50 px-3 py-2 rounded-lg border border-border">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span>Offline Mode Active</span>
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              <span>AI Mode Active</span>
             </div>
           </div>
         </div>
@@ -306,6 +348,34 @@ export default function Index() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               {/* Source Editor */}
               <div className="space-y-3">
+                {/* Code Generator Input */}
+                <div className="flex gap-2 mb-4 animate-fade-in">
+                  <input
+                    type="text"
+                    value={promptText}
+                    onChange={(e) => setPromptText(e.target.value)}
+                    placeholder={`Generate ${sourceLanguage} code (e.g., "Write a binary search function")`}
+                    className="flex-1 bg-secondary/30 border border-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary transition-all text-foreground"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !isGenerating) {
+                        handleGenerate();
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isGenerating || !promptText.trim()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all whitespace-nowrap"
+                  >
+                    {isGenerating ? (
+                      <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
+                    )}
+                    Generate
+                  </button>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                     Source Code
@@ -339,10 +409,10 @@ export default function Index() {
                     Run Source
                   </button>
                   {sourceRunOutput !== null && (
-                    <div className="rounded-lg border border-border overflow-hidden">
+                    <div className="rounded-lg border border-border overflow-hidden mt-4">
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-black/60 border-b border-border">
                         <TerminalSquare className="w-3 h-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground font-mono">output</span>
+                        <span className="text-xs text-muted-foreground font-mono">Live Output</span>
                         <span className={`ml-auto text-xs font-semibold ${sourceRunStatus === "error" ? "text-red-400" : "text-emerald-400"
                           }`}>{sourceRunStatus === "error" ? "Error" : "OK"}</span>
                       </div>
@@ -377,7 +447,15 @@ export default function Index() {
                     )}
                   </button>
                 </div>
-                <div className="h-[400px] animate-fade-in">
+                <div className="h-[400px] animate-fade-in relative">
+                  {isConverting && (
+                    <div className="absolute inset-0 z-10 bg-background/50 backdrop-blur-[1px] flex items-center justify-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs font-medium text-muted-foreground">AI is translating...</span>
+                      </div>
+                    </div>
+                  )}
                   <CodeEditor
                     value={convertedCode}
                     language={targetLanguage}
@@ -398,10 +476,10 @@ export default function Index() {
                     Run Converted
                   </button>
                   {convertedRunOutput !== null && (
-                    <div className="rounded-lg border border-border overflow-hidden">
+                    <div className="rounded-lg border border-border overflow-hidden mt-4">
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-black/60 border-b border-border">
                         <TerminalSquare className="w-3 h-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground font-mono">output</span>
+                        <span className="text-xs text-muted-foreground font-mono">Live Output</span>
                         <span className={`ml-auto text-xs font-semibold ${convertedRunStatus === "error" ? "text-red-400" : "text-emerald-400"
                           }`}>{convertedRunStatus === "error" ? "Error" : "OK"}</span>
                       </div>
@@ -523,90 +601,90 @@ export default function Index() {
                   Generate Flowchart
                 </button>
               </div>
+
             </div>
           )
         }
 
         {/* ── DS VISUALIZER TAB ── */}
-        {
-          activeTab === "dsvisualizer" && (
-            <div className="space-y-6">
-              {/* Description banner */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 px-5 py-4 flex gap-3">
-                <Network className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">Data Structure Visualizer</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Paste code that uses a <strong>Linked List</strong>, <strong>Stack</strong>, <strong>Queue</strong>, or <strong>Binary Tree</strong>.
-                    The analyzer detects the structure and renders a labelled Mermaid diagram showing nodes, pointers, and markers.
-                  </p>
-                </div>
+        {activeTab === "dsvisualizer" && (
+          <div className="space-y-6">
+            {/* Description banner */}
+            <div className="rounded-xl border border-primary/20 bg-primary/5 px-5 py-4 flex gap-3">
+              <Network className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Data Structure Visualizer</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Paste code that uses a <strong>Linked List</strong>, <strong>Stack</strong>, <strong>Queue</strong>, or <strong>Binary Tree</strong>.
+                  The analyzer detects the structure and renders a labelled Mermaid diagram showing nodes, pointers, and markers.
+                </p>
               </div>
+            </div>
 
-              {/* Editor + Output */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left — editor */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                      Source Code
-                    </h2>
-                    <LanguageSelector
-                      value={dsLanguage}
-                      onChange={setDsLanguage}
-                      label=""
-                    />
-                  </div>
-                  <div className="h-[380px]">
-                    <CodeEditor
-                      value={dsCode}
-                      onChange={setDsCode}
-                      language={dsLanguage}
-                      placeholder={`Paste code here, e.g.\n\nclass ListNode:\n    def __init__(self, val):\n        self.val = val\n        self.next = None\n\nhead = ListNode(1)\nhead.next = ListNode(2)\nhead.next.next = ListNode(3)`}
-                    />
-                  </div>
-                </div>
-
-                {/* Right — visualization */}
-                <div className="space-y-3">
+            {/* Editor + Output */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left — editor */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                    Structure Diagram
+                    Source Code
                   </h2>
-                  <DataStructurePanel
-                    code={analyzedDsCode}
-                    language={analyzedDsLang}
+                  <LanguageSelector
+                    value={dsLanguage}
+                    onChange={setDsLanguage}
+                    label=""
+                  />
+                </div>
+                <div className="h-[380px]">
+                  <CodeEditor
+                    value={dsCode}
+                    onChange={setDsCode}
+                    language={dsLanguage}
+                    placeholder={`Paste code here, e.g.\n\nclass ListNode:\n    def __init__(self, val):\n        self.val = val\n        self.next = None\n\nhead = ListNode(1)\nhead.next = ListNode(2)\nhead.next.next = ListNode(3)`}
                   />
                 </div>
               </div>
 
-              {/* Analyze button */}
-              <div className="max-w-md mx-auto">
-                <button
-                  onClick={handleAnalyzeDS}
-                  disabled={!dsCode.trim()}
-                  className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-sm
-                  bg-primary text-primary-foreground hover:bg-primary/90
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                  transition-all shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5
-                  active:translate-y-0"
-                >
-                  <Network className="w-4 h-4" />
-                  Analyze &amp; Visualize
-                </button>
+              {/* Right — visualization */}
+              <div className="space-y-3">
+                <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Structure Diagram
+                </h2>
+                <DataStructurePanel
+                  code={analyzedDsCode}
+                  language={analyzedDsLang}
+                />
               </div>
             </div>
-          )
-        }
-      </main >
+
+            {/* Analyze button */}
+            <div className="max-w-md mx-auto">
+              <button
+                onClick={handleAnalyzeDS}
+                disabled={!dsCode.trim()}
+                className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-sm
+                bg-primary text-primary-foreground hover:bg-primary/90
+                disabled:opacity-50 disabled:cursor-not-allowed
+                transition-all shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5
+                active:translate-y-0"
+              >
+                <Network className="w-4 h-4" />
+                Analyze & Visualize
+              </button>
+            </div>
+
+          </div>
+        )}
+      </main>
 
       {/* Footer */}
-      < footer className="border-t border-border mt-auto" >
+      <footer className="border-t border-border mt-auto">
         <div className="container mx-auto px-4 py-4">
           <p className="text-center text-xs text-muted-foreground">
-            🔒 100% Offline • No API Keys Required • AST-Based Translation
+            🤖 Powered by Google Gemini AI
           </p>
         </div>
-      </footer >
-    </div >
+      </footer>
+    </div>
   );
 }

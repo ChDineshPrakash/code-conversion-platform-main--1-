@@ -274,8 +274,13 @@ function genericDiagram(values: (string | number)[]): string {
         const id = `G${i}`;
         ids.push(id);
         lines.push(`  ${id}["[${i}]: ${values[i]}"]`);
-        if (i > 0) lines.push(`  G${i - 1} --> ${id}`);
     }
+
+    // Add edges
+    for (let i = 1; i < ids.length; i++) {
+        lines.push(`  ${ids[i - 1]} --> ${ids[i]}`);
+    }
+
     lines.push("");
     lines.push("  classDef item fill:#1e293b,stroke:#0e7490,color:#e2e8f0");
     if (ids.length > 0) lines.push(`  class ${ids.join(",")} item`);
