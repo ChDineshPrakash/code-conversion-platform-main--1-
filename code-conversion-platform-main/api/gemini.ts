@@ -1,44 +1,31 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = {
-    runtime: "edge", // Use Edge runtime for better performance on Vercel
-};
-
-export default async function handler(req: Request) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== "POST") {
-        return new Response(JSON.stringify({ error: "Method not allowed" }), {
-            status: 405,
-            headers: { "Content-Type": "application/json" }
-        });
+        return res.status(405).json({ error: "Method not allowed" });
     }
 
     try {
-        const body = await req.json();
-        const { action, sourceCode, sourceLanguage, targetLanguage, mode, promptText } = body;
+        const { action, sourceCode, sourceLanguage, targetLanguage, mode, promptText } = req.body;
 
         // Securely access the API key from the environment (not prefixed with VITE_)
         // We fall back to VITE_ temporarily during the transition to prevent instant failures if the environment isn't fully updated yet.
         const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
         if (!apiKey) {
-            return new Response(
-                JSON.stringify({ error: "Missing GEMINI_API_KEY environment variable. Cannot connect to Gemini API." }),
-                { status: 500, headers: { "Content-Type": "application/json" } }
-            );
+            return res.status(500).json({ error: "Missing GEMINI_API_KEY environment variable. Cannot connect to Gemini API." });
         }
 
         const ai = new GoogleGenAI({ apiKey });
 
         if (action === "convert") {
             if (sourceLanguage === targetLanguage) {
-                return new Response(
-                    JSON.stringify({
-                        code: sourceCode,
-                        explanation: "Source and target languages are the same. No conversion needed.",
-                        warnings: [],
-                    }),
-                    { status: 200, headers: { "Content-Type": "application/json" } }
-                );
+                return res.status(200).json({
+                    code: sourceCode,
+                    explanation: "Source and target languages are the same. No conversion needed.",
+                    warnings: [],
+                });
             }
 
             const prompt = `
@@ -84,10 +71,8 @@ ${sourceCode}
                 throw new Error("No response text from Gemini API");
             }
 
-            return new Response(response.text, {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-            });
+            // The response.text is already a JSON string, so we send it directly instead of json() which would double-stringify
+            return res.status(200).send(response.text);
 
         } else if (action === "generate") {
             const prompt = `
@@ -117,23 +102,14 @@ User request: "${promptText}"
                 resultcode = resultcode.replace(/^\`\`\`[a-zA-Z]*\n/, "").replace(/\n\`\`\`$/, "");
             }
 
-            return new Response(JSON.stringify({ code: resultcode }), {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-            });
+            return res.status(200).json({ code: resultcode });
 
         } else {
-            return new Response(JSON.stringify({ error: "Invalid action" }), {
-                status: 400,
-                headers: { "Content-Type": "application/json" }
-            });
+            return res.status(400).json({ error: "Invalid action" });
         }
 
     } catch (error) {
         console.error("Serverless API Error:", error);
-        return new Response(
-            JSON.stringify({ error: String(error) }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-        );
+        return res.status(500).json({ error: String(error) });
     }
 }
